@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>发送弹幕</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #f4f5f7; text-align: center; }
+        .container { background: white; padding: 30px 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-top: 50px; }
+        h2 { color: #333; margin-top: 0; }
+        input { box-sizing: border-box; width: 100%; padding: 15px; font-size: 16px; margin: 20px 0; border: 2px solid #eee; border-radius: 8px; outline: none; transition: 0.3s; }
+        input:focus { border-color: #00a1d6; }
+        button { width: 100%; padding: 15px; font-size: 18px; font-weight: bold; background: #00a1d6; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        button:active { background: #008fbf; }
+        .footer-tips { margin-top: 20px; font-size: 12px; color: #999; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>发射你的留言 🚀</h2>
+        <input type="text" id="msgInput" placeholder="输入你想对大家说的话..." maxlength="50">
+        <button id="sendBtn" onclick="sendDanmaku()">发送上墙</button>
+    </div>
+    <div class="footer-tips">你的留言将被永久展示在大屏幕上</div>
+
+    <script type="text/javascript" src="https://cdn.goeasy.io/goeasy-2.12.5.min.js"></script>
+    <script>
+        // ================= 请在此处修改 =================
+        const APP_KEY = "BC-477df52be4244b719571f4b4f7eee208"; // 替换为你的 GoEasy Common Key
+
+        const goEasy = GoEasy.getInstance({
+            host: "hangzhou.goeasy.io",
+            appkey: APP_KEY,
+            modules: ['pubsub']
+        });
+        
+        goEasy.connect();
+
+        function sendDanmaku() {
+            const input = document.getElementById('msgInput');
+            const btn = document.getElementById('sendBtn');
+            const text = input.value.trim();
+
+            if (!text) {
+                alert("总得写点什么吧！");
+                return;
+            }
+
+            // 防抖：发送期间禁用按钮，防止连点重复发送
+            btn.disabled = true;
+            btn.innerText = "发送中...";
+
+            goEasy.pubsub.publish({
+                channel: "danmaku_room",
+                message: text,
+                onSuccess: function () {
+                    input.value = '';
+                    alert("发送成功！快看大屏幕！");
+                    btn.disabled = false;
+                    btn.innerText = "发送上墙";
+                },
+                onFailed: function (error) {
+                    alert("发送失败，请检查网络。");
+                    btn.disabled = false;
+                    btn.innerText = "发送上墙";
+                }
+            });
+        }
+    </script>
+</body>
+</html>
