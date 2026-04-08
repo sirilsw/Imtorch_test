@@ -34,19 +34,23 @@
             modules: ['pubsub']
         });
         
-        goEasy.connect();
+   // 1. 监控连接过程，看是不是连大门都没进去
+        goEasy.connect({
+            onSuccess: function () {
+                console.log("GoEasy 服务器连接成功！");
+            },
+            onFailed: function (error) {
+                alert("连接失败！错误码: " + error.code + "\n原因: " + error.content);
+            }
+        });
 
         function sendDanmaku() {
             const input = document.getElementById('msgInput');
             const btn = document.getElementById('sendBtn');
             const text = input.value.trim();
 
-            if (!text) {
-                alert("总得写点什么吧！");
-                return;
-            }
+            if (!text) { alert("总得写点什么吧！"); return; }
 
-            // 防抖：发送期间禁用按钮，防止连点重复发送
             btn.disabled = true;
             btn.innerText = "发送中...";
 
@@ -59,8 +63,9 @@
                     btn.disabled = false;
                     btn.innerText = "发送上墙";
                 },
+                // 2. 重点在这里！让它把拒收的真正原因弹出来
                 onFailed: function (error) {
-                    alert("发送失败，请检查网络。");
+                    alert("被服务器拒收了！\n错误码: " + error.code + "\n原因: " + error.content);
                     btn.disabled = false;
                     btn.innerText = "发送上墙";
                 }
