@@ -6,13 +6,16 @@
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; }
         
+        /* 顶部状态监控条 */
+        #status-bar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: #ffeb3b; padding: 10px 25px; border-radius: 30px; z-index: 999; font-size: 16px; font-weight: bold; border: 1px solid #444; }
+
         /* 左侧弹幕区 */
         #danmaku-area { flex: 1; position: relative; height: 100vh; overflow: hidden; }
         .danmaku {
             position: absolute; white-space: nowrap; font-size: 36px; font-weight: bold; color: #fff;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.8); animation: moveLeft 10s linear forwards; /* 变慢一点，字多也能看清 */
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8); animation: moveLeft 12s linear forwards; /* 12秒，给500字留足阅读时间 */
         }
-        @keyframes moveLeft { from { left: 100%; } to { left: -100vw; } }
+        @keyframes moveLeft { from { left: 100%; } to { left: -150vw; } }
 
         /* 左下角提示区 */
         .info-box {
@@ -23,46 +26,28 @@
         .text-info h2 { margin: 0 0 10px 0; color: #333; font-size: 20px;}
         .text-info p { margin: 0; color: #666; font-size: 14px;}
 
-        /* ================= 重点：右侧历史记录区 ================= */
-        #history-sidebar {
-            width: 350px; /* 稍微加宽一点，方便看长文 */
-            height: 100vh; background: #222; border-left: 1px solid #333; display: flex; flex-direction: column;
-        }
+        /* 右侧历史记录区 */
+        #history-sidebar { width: 350px; height: 100vh; background: #222; border-left: 1px solid #333; display: flex; flex-direction: column; z-index: 20; }
         #history-sidebar h3 { color: #fff; text-align: center; margin: 20px 0; padding-bottom: 10px; border-bottom: 1px solid #444; }
-        
-        /* 这里的 overflow-y: auto 就是保证可以上下滑动的关键！ */
         #history-list { flex: 1; overflow-y: auto; padding: 0 20px 20px 20px; margin: 0; list-style: none; color: #ccc; }
-        
-        #history-list li { 
-            padding: 12px; 
-            background: #333; 
-            margin-bottom: 12px; 
-            border-radius: 6px; 
-            word-break: break-all; /* 保证长文会自动换行，绝不超出框外 */
-            line-height: 1.5; /* 增加行距，阅读更舒服 */
-            font-size: 15px; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        
-        /* 特殊样式的序号 */
+        #history-list li { padding: 12px; background: #333; margin-bottom: 12px; border-radius: 6px; word-break: break-all; line-height: 1.5; font-size: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
         .msg-number { color: #00e5ff; font-weight: bold; margin-right: 8px; }
-
         #clear-btn { background: #d9534f; color: white; border: none; padding: 15px; cursor: pointer; font-size: 16px; font-weight: bold; }
         #clear-btn:hover { background: #c9302c; }
-        
-        /* 滚动条美化（你可以看到明显的滚动条） */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-thumb { background: #666; border-radius: 4px; }
         ::-webkit-scrollbar-track { background: #111; }
     </style>
 </head>
 <body>
+    <div id="status-bar">⏳ 大屏正在启动中...</div>
+
     <div id="danmaku-area">
         <div class="info-box">
             <div id="qrcode"></div>
             <div class="text-info">
                 <h2>扫码发送弹幕 🚀</h2>
-                <p>畅所欲言，不限字数</p>
+                <p>畅所欲言，支持长文</p>
             </div>
         </div>
     </div>
@@ -77,26 +62,40 @@
     <script type="text/javascript" src="./goeasy.js"></script>
 
     <script>
-        // ====== 你的专属配置 ======
         const APP_KEY = "BC-477df52be4244b719571f4b4f7eee208"; 
         const GITHUB_PAGES_URL = "https://sirilsw.github.io/Imtorch_test/mobile.html"; 
+        const statusBar = document.getElementById('status-bar');
 
-        new QRCode(document.getElementById("qrcode"), { text: GITHUB_PAGES_URL, width: 120, height: 120 });
+        // 1. 防崩溃：安全生成二维码
+        try {
+            new QRCode(document.getElementById("qrcode"), { text: GITHUB_PAGES_URL, width: 120, height: 120 });
+        } catch(e) {
+            console.error("二维码插件加载失败，不影响弹幕功能");
+        }
 
-        // ================= 计数与历史系统 =================
+        // 2. 防崩溃：安全清理和读取历史数据
         const historyListEl = document.getElementById('history-list');
+        let messageHistory = [];
+        let messageCount = 0;
         
-        // 读取历史留言（如果没有就是空数组）
-        let messageHistory = JSON.parse(localStorage.getItem('danmaku_history')) || [];
-        // 读取历史总数，用于接力编号（如果没有就是 0）
-        let messageCount = parseInt(localStorage.getItem('danmaku_count')) || 0;
-        
+        try {
+            messageHistory = JSON.parse(localStorage.getItem('danmaku_history')) || [];
+            messageCount = parseInt(localStorage.getItem('danmaku_count')) || 0;
+            
+            // 核心修复：如果你有以前旧的纯文本记录，直接清理掉，防止报错！
+            if (messageHistory.length > 0 && typeof messageHistory[0] === 'string') {
+                messageHistory = [];
+                messageCount = 0;
+                localStorage.removeItem('danmaku_history');
+            }
+        } catch(e) {
+            localStorage.removeItem('danmaku_history'); // 数据损坏直接清空
+        }
+
         function renderHistory() {
             historyListEl.innerHTML = '';
-            // 倒序展示：最新发的排在最上面！不需要滑到底部就能看到
             [...messageHistory].reverse().forEach(item => {
                 const li = document.createElement('li');
-                // 用 HTML 渲染，把序号高亮显示
                 li.innerHTML = `<span class="msg-number">#${item.id}</span>${item.text}`;
                 historyListEl.appendChild(li);
             });
@@ -104,7 +103,6 @@
         renderHistory();
 
         function saveMessage(id, text) {
-            // 保存时，把编号和文字一起存进去
             messageHistory.push({ id: id, text: text });
             localStorage.setItem('danmaku_history', JSON.stringify(messageHistory));
             localStorage.setItem('danmaku_count', id.toString());
@@ -112,46 +110,66 @@
         }
 
         function clearHistory() {
-            if(confirm('确定要清空所有屏幕上保留的历史留言吗？')) {
+            if(confirm('确定要清空所有记录吗？')) {
                 messageHistory = [];
-                messageCount = 0; // 序号归零
+                messageCount = 0;
                 localStorage.removeItem('danmaku_history');
                 localStorage.removeItem('danmaku_count');
                 renderHistory();
             }
         }
 
-        // ================= GoEasy 接收弹幕 =================
-        const goEasy = GoEasy.getInstance({ host: "hangzhou.goeasy.io", appkey: APP_KEY, modules: ['pubsub'] });
-        goEasy.connect();
+        // 3. 防崩溃：GoEasy 连接与监控
+        try {
+            const goEasy = GoEasy.getInstance({ host: "hangzhou.goeasy.io", appkey: APP_KEY, modules: ['pubsub'] });
+            
+            goEasy.connect({
+                onSuccess: function() {
+                    statusBar.innerText = "✅ 大屏连接成功！正在接入频道...";
+                    
+                    // 连接成功后，开始订阅频道
+                    goEasy.pubsub.subscribe({
+                        channel: "danmaku_room",
+                        onSuccess: function() {
+                            statusBar.innerText = "✅ 弹幕墙准备就绪！请发弹幕测试";
+                            statusBar.style.color = "#00e676";
+                            // 5秒后隐藏顶部提示条
+                            setTimeout(() => { statusBar.style.display = 'none'; }, 5000);
+                        },
+                        onFailed: function(error) {
+                            statusBar.innerText = "❌ 频道订阅失败: " + error.content;
+                            statusBar.style.color = "#ff4081";
+                        },
+                        onMessage: function (message) {
+                            const rawText = message.content;
+                            messageCount++;
+                            saveMessage(messageCount, rawText);
 
-        goEasy.pubsub.subscribe({
-            channel: "danmaku_room",
-            onMessage: function (message) {
-                const rawText = message.content;
-                
-                // 1. 序号加一
-                messageCount++;
-                
-                // 2. 保存到侧边栏历史记录 (带着它专属的序号)
-                saveMessage(messageCount, rawText);
+                            const div = document.createElement('div');
+                            div.className = 'danmaku';
+                            div.innerText = `#${messageCount} ${rawText}`; 
+                            
+                            // 随机高度 (避开顶部和底部边界)
+                            div.style.top = (Math.random() * 65 + 10) + '%';
+                            const colors = ['#ffffff', '#ffeb3b', '#00e676', '#00e5ff', '#ff4081'];
+                            div.style.color = colors[Math.floor(Math.random() * colors.length)];
 
-                // 3. 触发屏幕飞行效果
-                const div = document.createElement('div');
-                div.className = 'danmaku';
-                // 大屏幕上飞的弹幕也带上序号！
-                div.innerText = `#${messageCount} ${rawText}`; 
-                
-                div.style.top = (Math.random() * 70 + 10) + '%';
-                const colors = ['#ffffff', '#ffeb3b', '#00e676', '#00e5ff', '#ff4081'];
-                div.style.color = colors[Math.floor(Math.random() * colors.length)];
-
-                document.getElementById('danmaku-area').appendChild(div);
-
-                // 根据字数稍微延长一下大屏上的停留时间，防止长字数飞得太快
-                setTimeout(() => div.remove(), 12000);
-            }
-        });
+                            document.getElementById('danmaku-area').appendChild(div);
+                            
+                            // 停留时间加长，匹配动画
+                            setTimeout(() => div.remove(), 12000);
+                        }
+                    });
+                },
+                onFailed: function(error) {
+                    statusBar.innerText = "❌ 大屏连网失败: " + error.content;
+                    statusBar.style.color = "#ff4081";
+                }
+            });
+        } catch (e) {
+            statusBar.innerText = "❌ GoEasy 工具包丢失，请确认 goeasy.js 在同目录下";
+            statusBar.style.color = "#ff4081";
+        }
     </script>
 </body>
 </html>
