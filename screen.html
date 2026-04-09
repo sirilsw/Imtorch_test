@@ -6,18 +6,15 @@
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; }
         
-        /* 弹幕展示区 (左侧) */
+        /* 左侧弹幕区 */
         #danmaku-area { flex: 1; position: relative; height: 100vh; overflow: hidden; }
-        
-        /* 弹幕动画 */
         .danmaku {
             position: absolute; white-space: nowrap; font-size: 36px; font-weight: bold; color: #fff;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
-            animation: moveLeft 8s linear forwards;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8); animation: moveLeft 10s linear forwards; /* 变慢一点，字多也能看清 */
         }
-        @keyframes moveLeft { from { left: 100%; } to { left: -100%; } }
+        @keyframes moveLeft { from { left: 100%; } to { left: -100vw; } }
 
-        /* 左下角扫码提示区 */
+        /* 左下角提示区 */
         .info-box {
             position: absolute; bottom: 30px; left: 30px; background: rgba(255,255,255,0.9); padding: 20px; 
             border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 15px; z-index: 10;
@@ -26,19 +23,37 @@
         .text-info h2 { margin: 0 0 10px 0; color: #333; font-size: 20px;}
         .text-info p { margin: 0; color: #666; font-size: 14px;}
 
-        /* 历史记录区 (右侧) */
+        /* ================= 重点：右侧历史记录区 ================= */
         #history-sidebar {
-            width: 300px; height: 100vh; background: #222; border-left: 1px solid #333; display: flex; flex-direction: column;
+            width: 350px; /* 稍微加宽一点，方便看长文 */
+            height: 100vh; background: #222; border-left: 1px solid #333; display: flex; flex-direction: column;
         }
         #history-sidebar h3 { color: #fff; text-align: center; margin: 20px 0; padding-bottom: 10px; border-bottom: 1px solid #444; }
+        
+        /* 这里的 overflow-y: auto 就是保证可以上下滑动的关键！ */
         #history-list { flex: 1; overflow-y: auto; padding: 0 20px 20px 20px; margin: 0; list-style: none; color: #ccc; }
-        #history-list li { padding: 10px; background: #333; margin-bottom: 10px; border-radius: 6px; word-break: break-all; font-size: 14px; }
+        
+        #history-list li { 
+            padding: 12px; 
+            background: #333; 
+            margin-bottom: 12px; 
+            border-radius: 6px; 
+            word-break: break-all; /* 保证长文会自动换行，绝不超出框外 */
+            line-height: 1.5; /* 增加行距，阅读更舒服 */
+            font-size: 15px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        
+        /* 特殊样式的序号 */
+        .msg-number { color: #00e5ff; font-weight: bold; margin-right: 8px; }
+
         #clear-btn { background: #d9534f; color: white; border: none; padding: 15px; cursor: pointer; font-size: 16px; font-weight: bold; }
         #clear-btn:hover { background: #c9302c; }
         
-        /* 滚动条美化 */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: #666; border-radius: 3px; }
+        /* 滚动条美化（你可以看到明显的滚动条） */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-thumb { background: #666; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: #111; }
     </style>
 </head>
 <body>
@@ -47,7 +62,7 @@
             <div id="qrcode"></div>
             <div class="text-info">
                 <h2>扫码发送弹幕 🚀</h2>
-                <p>无需同一WiFi，随时随地互动</p>
+                <p>畅所欲言，不限字数</p>
             </div>
         </div>
     </div>
@@ -62,85 +77,79 @@
     <script type="text/javascript" src="./goeasy.js"></script>
 
     <script>
-        // ================= 1. 核心配置区 (请在此处修改) =================
-        const APP_KEY = "BC-477df52be4244b719571f4b4f7eee208"; // 替换为你的 GoEasy Common Key
-        const GITHUB_PAGES_URL = "https://sirilsw.github.io/Imtorch_test/mobile.html"; // 替换为你的 GitHub Pages 手机端公网地址
+        // ====== 你的专属配置 ======
+        const APP_KEY = "BC-477df52be4244b719571f4b4f7eee208"; 
+        const GITHUB_PAGES_URL = "https://sirilsw.github.io/Imtorch_test/mobile.html"; 
 
-        // ================= 2. 生成二维码 =================
-        new QRCode(document.getElementById("qrcode"), {
-            text: GITHUB_PAGES_URL,
-            width: 120, height: 120
-        });
+        new QRCode(document.getElementById("qrcode"), { text: GITHUB_PAGES_URL, width: 120, height: 120 });
 
-        // ================= 3. 历史记录系统 (Local Storage) =================
+        // ================= 计数与历史系统 =================
         const historyListEl = document.getElementById('history-list');
-        // 页面加载时，从本地读取历史记录
-        let messageHistory = JSON.parse(localStorage.getItem('danmaku_history')) || [];
         
-        // 渲染历史列表
+        // 读取历史留言（如果没有就是空数组）
+        let messageHistory = JSON.parse(localStorage.getItem('danmaku_history')) || [];
+        // 读取历史总数，用于接力编号（如果没有就是 0）
+        let messageCount = parseInt(localStorage.getItem('danmaku_count')) || 0;
+        
         function renderHistory() {
             historyListEl.innerHTML = '';
-            // 倒序展示，最新的在最上面
-            [...messageHistory].reverse().forEach(msg => {
+            // 倒序展示：最新发的排在最上面！不需要滑到底部就能看到
+            [...messageHistory].reverse().forEach(item => {
                 const li = document.createElement('li');
-                li.innerText = msg;
+                // 用 HTML 渲染，把序号高亮显示
+                li.innerHTML = `<span class="msg-number">#${item.id}</span>${item.text}`;
                 historyListEl.appendChild(li);
             });
         }
         renderHistory();
 
-        // 保存新消息到本地并更新列表
-        function saveMessage(text) {
-            messageHistory.push(text);
+        function saveMessage(id, text) {
+            // 保存时，把编号和文字一起存进去
+            messageHistory.push({ id: id, text: text });
             localStorage.setItem('danmaku_history', JSON.stringify(messageHistory));
+            localStorage.setItem('danmaku_count', id.toString());
             renderHistory();
         }
 
-        // 清空历史记录
         function clearHistory() {
             if(confirm('确定要清空所有屏幕上保留的历史留言吗？')) {
                 messageHistory = [];
+                messageCount = 0; // 序号归零
                 localStorage.removeItem('danmaku_history');
+                localStorage.removeItem('danmaku_count');
                 renderHistory();
             }
         }
 
-        // ================= 4. GoEasy 接收弹幕 =================
-        const goEasy = GoEasy.getInstance({
-            host: "hangzhou.goeasy.io",
-            appkey: APP_KEY,
-            modules: ['pubsub']
-        });
-
-        goEasy.connect({
-            onSuccess: function () { console.log("大屏连接成功，准备接收弹幕"); },
-            onFailed: function (error) { alert("大屏连接失败，请检查 AppKey 或网络。"); }
-        });
+        // ================= GoEasy 接收弹幕 =================
+        const goEasy = GoEasy.getInstance({ host: "hangzhou.goeasy.io", appkey: APP_KEY, modules: ['pubsub'] });
+        goEasy.connect();
 
         goEasy.pubsub.subscribe({
             channel: "danmaku_room",
             onMessage: function (message) {
-                const text = message.content;
+                const rawText = message.content;
                 
-                // 1. 保存到侧边栏历史记录
-                saveMessage(text);
+                // 1. 序号加一
+                messageCount++;
+                
+                // 2. 保存到侧边栏历史记录 (带着它专属的序号)
+                saveMessage(messageCount, rawText);
 
-                // 2. 触发屏幕飞行效果
+                // 3. 触发屏幕飞行效果
                 const div = document.createElement('div');
                 div.className = 'danmaku';
-                div.innerText = text;
+                // 大屏幕上飞的弹幕也带上序号！
+                div.innerText = `#${messageCount} ${rawText}`; 
                 
-                // 随机高度 (10% - 80%)，避开最底部的二维码
                 div.style.top = (Math.random() * 70 + 10) + '%';
-                
-                // 随机颜色
                 const colors = ['#ffffff', '#ffeb3b', '#00e676', '#00e5ff', '#ff4081'];
                 div.style.color = colors[Math.floor(Math.random() * colors.length)];
 
                 document.getElementById('danmaku-area').appendChild(div);
 
-                // 8秒后移除飞行元素
-                setTimeout(() => div.remove(), 8000);
+                // 根据字数稍微延长一下大屏上的停留时间，防止长字数飞得太快
+                setTimeout(() => div.remove(), 12000);
             }
         });
     </script>
